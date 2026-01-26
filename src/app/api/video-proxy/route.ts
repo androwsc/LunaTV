@@ -35,9 +35,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 });
   }
 
-  // 🎯 优先检查缓存（Kvrocks + 文件系统）
+  // 🎯 优先检查缓存（Kvrocks/Redis + 文件系统）
   const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE;
-  if (storageType === 'kvrocks') {
+  if (storageType === 'kvrocks' || storageType === 'redis') {
     try {
       const cached = await isVideoCached(videoUrl);
       console.log(`[VideoProxy] 缓存检查结果: cached=${cached}, url=${videoUrl.substring(0, 50)}...`);
@@ -60,8 +60,8 @@ export async function GET(request: Request) {
   const ifNoneMatch = request.headers.get('if-none-match');
   const ifModifiedSince = request.headers.get('if-modified-since');
 
-  // 🎯 决定是否需要缓存：Kvrocks 存储 + 豆瓣视频
-  const shouldCache = storageType === 'kvrocks' &&
+  // 🎯 决定是否需要缓存：Kvrocks/Redis 存储 + 豆瓣视频
+  const shouldCache = (storageType === 'kvrocks' || storageType === 'redis') &&
                       (videoUrl.includes('douban') || videoUrl.includes('doubanio'));
 
   console.log(`[VideoProxy] 缓存检查: storageType=${storageType}, shouldCache=${shouldCache}, url=${videoUrl.substring(0, 50)}...`);
@@ -130,7 +130,7 @@ export async function GET(request: Request) {
 
     if (!videoResponse.ok) {
       // 🎯 如果是 403/404 等错误，删除可能过期的缓存
-      if (storageType === 'kvrocks' && (videoResponse.status === 403 || videoResponse.status === 404)) {
+      if ((storageType === 'kvrocks' || storageType === 'redis') && (videoResponse.status === 403 || videoResponse.status === 404)) {
         console.log(`[VideoProxy] 视频URL返回 ${videoResponse.status}，删除缓存: ${videoUrl}`);
         deleteVideoCache(videoUrl).catch(err => {
           console.error('[VideoProxy] 删除缓存失败:', err);

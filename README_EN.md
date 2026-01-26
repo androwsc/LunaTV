@@ -484,9 +484,9 @@ volumes:
   video-cache:  # Video cache volume
 ```
 
-### 🔴 Redis Storage (Risk of Data Loss)
+### 🔴 Redis Storage (Recommended AOF Persistence)
 
-Redis default configuration may lead to data loss. Persistence must be enabled.
+Redis uses AOF persistence mode for safer and more reliable data storage.
 
 ```yml
 services:
@@ -510,7 +510,7 @@ services:
     image: redis:alpine
     container_name: moontv-redis
     restart: unless-stopped
-    command: redis-server --save 60 1 --loglevel warning
+    command: redis-server --appendonly yes --appendfsync everysec --loglevel warning
     volumes:
       - ./data:/data
     networks:
@@ -718,6 +718,86 @@ When a new Docker image version is released, Zeabur won't automatically update. 
 - **Persistent Storage**: KVRocks must configure persistent volume to `/var/lib/kvrocks/db` directory, otherwise data will be lost on restart
 
 ---
+
+### ☁️ ClawCloud Run Deployment (Recommended)
+
+ClawCloud Run is an all-in-one cloud deployment platform with visual deployment, persistent storage, and auto-scaling support. Quick deployment using pre-built Docker images.
+
+**Deployment Steps:**
+
+1. **Add Redis Service** (Add database first)
+   - Visit [ClawCloud Run Console](https://run.claw.cloud)
+   - Click "App Launchpad" → "Create App"
+   - Select "Docker Image" deployment method
+   - Enter image name: `redis:alpine`
+   - Configure port: `6379` (TCP)
+   - **Remember the service name** (e.g., `redis-service`)
+   - **Configure Startup Command (Important)**:
+     * In "Advanced configuration", find "Command" field
+     * Add startup command: `redis-server --appendonly yes --appendfsync everysec --loglevel warning`
+     * This enables AOF persistence (syncs every second, more reliable)
+   - **Configure Persistent Storage (Important)**:
+     * In "Advanced configuration", find "Local Storage Volumes"
+     * Add local storage volume
+     * Container path: `/data`
+     * Recommended capacity: 5GB (adjust based on data volume)
+     * Save configuration
+
+   > 💡 **Important**:
+   > - Persistent volume path must be set to `/data` (Redis data directory)
+   > - Startup command uses AOF mode (`--appendonly yes`) for data safety
+   > - AOF mode is more reliable than RDB, prevents persistence errors
+   > - This configuration ensures data persists after restart
+
+2. **Add LunaTV Service**
+   - Click "App Launchpad" → "Create App"
+   - Select "Docker Image" deployment method
+   - Enter image name: `ghcr.io/szemeng76/lunatv:latest`
+   - Configure port: `3000` (HTTP)
+   - Deployment mode: Choose fixed instance or elastic scaling
+
+3. **Configure LunaTV Environment Variables**
+
+   Add the following environment variables in LunaTV service configuration:
+
+   ```env
+   # Required: Admin account
+   USERNAME=admin
+   PASSWORD=your_secure_password
+
+   # Required: Storage configuration
+   NEXT_PUBLIC_STORAGE_TYPE=redis
+   REDIS_URL=redis://redis-service:6379
+   VIDEO_CACHE_DIR=/app/video-cache
+
+   # Optional: Site configuration
+   NEXT_PUBLIC_SITE_NAME=LunaTV
+   NEXT_PUBLIC_SITE_DESCRIPTION=My Streaming Platform
+   ```
+
+4. **Configure LunaTV Persistent Storage (Video Cache)**
+
+   In LunaTV service "Advanced configuration":
+   - Find "Local Storage Volumes"
+   - Add local storage volume
+   - Container path: `/app/video-cache`
+   - Recommended capacity: 10GB (adjust based on usage)
+
+   > 💡 **Video Cache**: This storage caches Douban trailers and other video content, significantly reducing traffic consumption (96% savings in real tests).
+
+5. **Complete Deployment**
+   - Save all configurations
+   - Wait for services to start (usually 1-2 minutes)
+   - Access the assigned domain to use
+
+   > 📝 **Service Connection**: Services within the same ClawCloud Run project can communicate via service names (e.g., `redis-service:6379`)
+
+#### ✨ ClawCloud Run Deployment Advantages
+
+- ✅ **Visual Deployment**: No YAML files needed, deploy with a few clicks in visual interface
+- ✅ **Persistent Storage**: Local storage volumes with guaranteed data persistence
+- ✅ **Video Cache Support**: Full support for `/app/video-cache` video caching feature
+- ✅ **Elastic Scaling**: Supports both fixed instance and auto-scaling modes
 
 ## 🌐 Vercel Deployment (Serverless)
 

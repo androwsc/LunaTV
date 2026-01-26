@@ -10,7 +10,7 @@ export async function GET() {
   try {
     const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE;
 
-    if (storageType !== 'kvrocks') {
+    if (storageType !== 'kvrocks' && storageType !== 'redis') {
       return NextResponse.json({
         code: 400,
         message: '当前存储类型不支持视频缓存',

@@ -347,6 +347,7 @@
   - [Docker 部署（推荐）](#-推荐部署方案kvrocks-存储)
   - [飞牛OS 部署](#-飞牛osfnos部署)
   - [Zeabur 部署（推荐）](#️-zeabur-部署推荐)
+  - [ClawCloud Run 部署（推荐）](#️-clawcloud-run-部署推荐)
   - [Vercel 部署（无服务器）](#-vercel-部署无服务器)
 - [配置文件](#-配置文件)
 - [环境变量](#-环境变量)
@@ -473,9 +474,9 @@ volumes:
   video-cache:  # 视频缓存 volume
 ```
 
-### 🔴 Redis 存储（有数据丢失风险）
+### 🔴 Redis 存储（推荐 AOF 持久化）
 
-Redis 默认配置可能导致数据丢失，需要开启持久化。
+Redis 使用 AOF 持久化模式，数据更安全可靠。
 
 ```yml
 services:
@@ -499,7 +500,7 @@ services:
     image: redis:alpine
     container_name: moontv-redis
     restart: unless-stopped
-    command: redis-server --save 60 1 --loglevel warning
+    command: redis-server --appendonly yes --appendfsync everysec --loglevel warning
     volumes:
       - ./data:/data
     networks:
@@ -705,6 +706,117 @@ Zeabur 是一站式云端部署平台，使用预构建的 Docker 镜像可以�
 - **区域选择**：建议选择离用户最近的区域部署
 - **服务网络**：同一 Project 中的服务通过服务名称互相访问（如 `apachekvrocks:6666`）
 - **持久化存储**：KVRocks 必须配置持久化卷到 `/var/lib/kvrocks/db` 目录，否则重启后数据丢失
+
+---
+
+### ☁️ ClawCloud Run 部署（推荐）
+
+ClawCloud Run 是一站式云端部署平台，支持可视化部署、持久化存储和自动扩缩容，使用预构建的 Docker 镜像可以快速部署。
+
+**部署步骤：**
+
+1. **添加 Redis 服务**（先添加数据库）
+   - 访问 [ClawCloud Run 控制台](https://run.claw.cloud)
+   - 点击 "App Launchpad" → "Create App"
+   - 选择 "Docker Image" 部署方式
+   - 输入镜像名称：`redis:alpine`
+   - 配置端口：`6379` (TCP)
+   - **记住服务名称**（例如：`redis-service`）
+   - **配置启动命令（重要）**：
+     * 在 "Advanced configuration"（高级配置）中找到 "Command" 字段
+     * 添加启动命令：`redis-server --appendonly yes --appendfsync everysec --loglevel warning`
+     * 这会启用 AOF 持久化（每秒同步一次，数据更安全）
+   - **配置持久化存储（重要）**：
+     * 在 "Advanced configuration" 中找到 "Local Storage Volumes"
+     * 添加本地存储卷
+     * 容器路径：`/data`
+     * 建议容量：5GB（根据数据量调整）
+     * 保存配置
+
+   > 💡 **重要提示**：
+   > - 持久化卷路径必须设置为 `/data`（Redis 数据目录）
+   > - 启动命令使用 AOF 模式（`--appendonly yes`）确保数据安全
+   > - AOF 模式比 RDB 更可靠，不会出现持久化失败错误
+   > - 这样配置可确保重启后数据不会丢失
+
+2. **添加 LunaTV 服务**
+   - 点击 "App Launchpad" → "Create App"
+   - 选择 "Docker Image" 部署方式
+   - 输入镜像名称：`ghcr.io/szemeng76/lunatv:latest`
+   - 配置端口：`3000` (HTTP)
+   - 部署模式：可选择固定实例或弹性扩缩容
+
+3. **配置 LunaTV 环境变量**
+
+   在 LunaTV 服务的环境变量配置中添加：
+
+   ```env
+   # 必填：管理员账号
+   USERNAME=admin
+   PASSWORD=your_secure_password
+
+   # 必填：存储配置
+   NEXT_PUBLIC_STORAGE_TYPE=redis
+   REDIS_URL=redis://redis-service:6379
+   VIDEO_CACHE_DIR=/app/video-cache
+
+   # 可选：站点配置
+   NEXT_PUBLIC_SITE_NAME=LunaTV
+   NEXT_PUBLIC_SITE_DESCRIPTION=我的影视平台
+   ```
+
+4. **配置 LunaTV 持久化存储（视频缓存）**
+
+   在 LunaTV 服务的 "Advanced configuration" 中：
+   - 找到 "Local Storage Volumes"
+   - 添加本地存储卷
+   - 容器路径：`/app/video-cache`
+   - 建议容量：10GB（根据使用情况调整）
+
+   > 💡 **视频缓存说明**：此存储用于缓存豆瓣预告片等视频内容，可大幅减少流量消耗（实测节省 96% 流量）。
+
+5. **完成部署**
+   - 保存所有配置
+   - 等待服务启动（通常 1-2 分钟）
+   - 访问分配的域名即可使用
+
+   > 📝 **服务连接**：ClawCloud Run 同一项目内的服务可通过服务名称互相访问（如 `redis-service:6379`）
+
+#### ✨ ClawCloud Run 部署优势
+
+- ✅ **可视化部署**：无需编写 YAML 文件，可视化界面几次点击即可完成部署
+- ✅ **持久化存储**：支持本地存储卷，数据持久化有保障
+- ✅ **视频缓存支持**：完整支持 `/app/video-cache` 视频缓存功能
+- ✅ **弹性扩缩容**：支持固定实例和自动扩缩容两种模式
+- ✅ **模板生态**：丰富的应用模板库，快速部署常用应用
+- ✅ **数据库管理**：内置 Redis、PostgreSQL、MySQL、MongoDB 等数据库支持
+- ✅ **实时日志**：Web 界面实时查看应用日志
+- ✅ **AI 辅助开发**：集成 AI 工具加速开发流程
+
+#### ⚠️ ClawCloud Run 注意事项
+
+- **计费模式**：按实际使用的资源按分钟计费，提供免费套餐和付费套餐
+- **持久化存储**：必须为 Redis 和 LunaTV 配置本地存储卷，否则重启后数据丢失
+- **服务名称**：记住 Redis 服务名称，用于 LunaTV 的 `REDIS_URL` 配置
+- **容器路径**：Redis 数据目录必须是 `/data`，视频缓存目录是 `/app/video-cache`
+
+#### 💰 ClawCloud Run 定价参考
+
+| 套餐 | 月费 | 存储容量 | 计算资源 | 月度积分 |
+|------|------|----------|----------|----------|
+| Free | $0 | 10GB | 5 vCPU, 10GB RAM | $5 |
+| Hobby | $5 | 无限制* | 16 vCPU, 32GB RAM | - |
+| Pro | $20 | 无限制* | 128 vCPU, 256GB RAM | - |
+
+**按量计费：**
+- 持久化存储：$0.12/GB/月（$0.000005876/GB/分钟）
+- 计算资源：按分钟计费
+
+*注：Hobby 和 Pro 套餐的"无限制"是指在套餐内不限容量，超出后按量计费。
+
+**成本估算示例：**
+- 使用 Free 套餐 + 10GB 存储（Redis 5GB + 视频缓存 5GB）：**$0/月**
+- 使用 Hobby 套餐 + 20GB 存储：约 **$6.2/月**（$5 套餐费 + $1.2 超额存储费）
 
 ---
 
