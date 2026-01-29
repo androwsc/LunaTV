@@ -150,7 +150,7 @@ export async function searchFromApi(
     const apiBaseUrl = apiSite.api;
 
     // 智能搜索：使用预计算的变体或即时生成（优化：只生成最有用的变体）
-    const searchVariants = precomputedVariants || generateSearchVariants(query).slice(0, 2);
+    const searchVariants = precomputedVariants || generateSearchVariants(query).slice(0, 3);
     let results: SearchResult[] = [];
     let pageCountFromFirst = 0;
 
@@ -339,6 +339,54 @@ function calculateRelevanceScore(originalQuery: string, variant: string, results
 const M3U8_PATTERN = /(https?:\/\/[^"'\s]+?\.m3u8)/g;
 
 /**
+ * 生成数字变体，处理中文数字与阿拉伯数字的转换
+ * 例如："中国奇谭 第二季" -> "中国奇谭2"
+ * @param query 原始查询
+ * @returns 数字变体数组
+ */
+function generateNumberVariants(query: string): string[] {
+  const variants: string[] = [];
+
+  // 中文数字到阿拉伯数字的映射
+  const chineseNumbers: { [key: string]: string } = {
+    '一': '1', '二': '2', '三': '3', '四': '4', '五': '5',
+    '六': '6', '七': '7', '八': '8', '九': '9', '十': '10',
+  };
+
+  // 1. 处理"第X季/部/集"格式（最常见的情况）
+  const seasonPattern = /第([一二三四五六七八九十\d]+)(季|部|集|期)/;
+  const match = seasonPattern.exec(query);
+
+  if (match) {
+    const fullMatch = match[0];
+    const number = match[1];
+    const arabicNumber = chineseNumbers[number] || number;
+    const base = query.replace(fullMatch, '').trim();
+
+    if (base) {
+      // 生成简化格式：无空格，如"中国奇谭2"
+      variants.push(`${base}${arabicNumber}`);
+    }
+  }
+
+  // 2. 处理末尾纯数字（如"中国奇谭2"）-> "中国奇谭 第二季"
+  const endNumberMatch = query.match(/^(.+?)\s*(\d+)$/);
+  if (endNumberMatch) {
+    const base = endNumberMatch[1].trim();
+    const number = endNumberMatch[2];
+    const chineseNum = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'][parseInt(number)];
+
+    if (chineseNum && parseInt(number) <= 10) {
+      // 生成中文格式："中国奇谭第二季"
+      variants.push(`${base}第${chineseNum}季`);
+    }
+  }
+
+  // 限制返回前1个最有可能的变体
+  return variants.slice(0, 1);
+}
+
+/**
  * 生成搜索查询的多种变体，提高搜索命中率
  * @param originalQuery 原始查询
  * @returns 按优先级排序的搜索变体数组
@@ -358,13 +406,13 @@ export function generateSearchVariants(originalQuery: string): string[] {
     }
   });
 
-  // 4. 移除数字变体生成（优化性能，依赖页面智能匹配逻辑处理数字差异）
-  // const numberVariants = generateNumberVariants(trimmed);
-  // numberVariants.forEach(variant => {
-  //   if (!variants.includes(variant)) {
-  //     variants.push(variant);
-  //   }
-  // });
+  // 3. 数字变体生成（处理"第二季" <-> "2"转换）
+  const numberVariants = generateNumberVariants(trimmed);
+  numberVariants.forEach(variant => {
+    if (!variants.includes(variant)) {
+      variants.push(variant);
+    }
+  });
 
   // 如果包含空格，生成额外变体
   if (trimmed.includes(' ')) {
